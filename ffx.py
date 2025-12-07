@@ -427,24 +427,69 @@ def interactive_mode(input_file: Path):
 
         # Build and run command
         if quality == "high":
-            cmd = ffmpeg.build_command(input_file, output_file, video_bitrate="3M")
+            c_kwargs = {"video_bitrate": "3M"}
         elif quality == "maximum":
-            cmd = ffmpeg.build_command(
-                input_file, output_file, video_bitrate="1M", video_codec="libx265"
-            )
+            c_kwargs = {"video_bitrate": "1M", "video_codec": "libx265"}
         elif quality == "optimized":
-            cmd = ffmpeg.build_command(
-                input_file,
-                output_file,
-                video_codec="libx264",
-                ffmpeg_preset="medium",
-                crf=23,
-                scale="1920:-1",
-                audio_codec="aac",
-                audio_bitrate="128k",
-            )
+            c_kwargs = {
+                "video_codec": "libx264",
+                "ffmpeg_preset": "medium",
+                "crf": 23,
+                "audio_codec": "aac",
+                "audio_bitrate": "128k",
+                "scale": "1920:-1",  # Default
+            }
         else:
-            cmd = ffmpeg.build_command(input_file, output_file, preset="mobile")
+            # balanced or others? implicit else was preset="mobile"
+            # This case will be handled by passing 'preset' argument directly to build_command
+            pass
+
+        # Resolution Check
+        console.print("\n[bold]Resolution Settings:[/bold]")
+        res_choice = Prompt.ask(
+            "[cyan]Change resolution?[/cyan]",
+            choices=["Keep Original", "1080p", "720p", "480p", "Custom"],
+            default="Keep Original",
+        )
+
+        # Finalize Scale
+        final_scale = None
+        if res_choice == "1080p":
+            final_scale = "-1:1080"
+        elif res_choice == "720p":
+            final_scale = "-1:720"
+        elif res_choice == "480p":
+            final_scale = "-1:480"
+        elif res_choice == "Custom":
+            final_scale = Prompt.ask("Enter scale (e.g. 1280:-1)")
+
+        if final_scale:
+            c_kwargs["scale"] = final_scale
+        elif res_choice == "Keep Original" and quality == "optimized":
+            # If user explicitly chose Keep Original, maybe we shouldn't force 1920:-1 if they meant source res?
+            # But "optimized" preset implies some standardization.
+            # Let's leave optimized default as is unless changed.
+            pass
+
+        if quality in ["high", "maximum", "optimized"]:
+            cmd = ffmpeg.build_command(input_file, output_file, **c_kwargs)
+        else:
+            # handle the "else" case for preset=mobile
+            if final_scale:
+                cmd = ffmpeg.build_command(
+                    input_file, output_file, preset="mobile", scale=final_scale
+                )
+            else:
+                cmd = ffmpeg.build_command(input_file, output_file, preset="mobile")
+
+        if quality == "optimized" and not final_scale:
+            console.print("\n[dim]Target Resolution: 1920px width (Auto height) [Default][/dim]")
+
+        console.print("[dim]Target FPS: Same as Source[/dim]")
+
+        if not Confirm.ask("\nProceed with compression?", default=True):
+            console.print("[yellow]Operation cancelled.[/yellow]")
+            return
 
         if ffmpeg.run_with_progress(cmd, info.duration):
             new_size = output_file.stat().st_size
@@ -583,7 +628,8 @@ def cli(ctx):
 @click.option("--output", "-o", type=click.Path(), help="Output filename")
 @click.option("--quality", "-q", type=click.Choice(["high", "medium", "low"]), default="medium")
 @click.option("--preset", "-p", type=click.Choice(list(PRESETS.keys())), help="Use preset")
-def compress(input_file, output, quality, preset):
+@click.option("--resolution", "-r", help="Target resolution (e.g. 1080p, 720p, or 1280:-1)")
+def compress(input_file, output, quality, preset, resolution):
     """Intelligently compress video files"""
     input_path = Path(input_file)
     output_path = Path(output) if output else input_path.with_stem(f"{input_path.stem}_compressed")
@@ -599,19 +645,62 @@ def compress(input_file, output, quality, preset):
         f"\n[cyan]Compressing with {quality} quality (CRF {crf_values[quality]})...[/cyan]"
     )
 
+    scale_option = "1920:-1"  # Default for optimized
+    if preset:
+        # Presets handles their own scaling usually, or none
+        scale_option = None
+
+    if resolution:
+        if resolution.lower() == "4k":
+            scale_option = "-1:2160"
+        elif resolution.lower() == "2k":
+            scale_option = "-1:1440"
+        elif resolution.lower() == "1080p":
+            scale_option = "-1:1080"
+        elif resolution.lower() == "720p":
+            scale_option = "-1:720"
+        elif resolution.lower() == "480p":
+            scale_option = "-1:480"
+        else:
+            scale_option = resolution
+
     kwargs = {
         "video_codec": "libx264",
         "crf": crf_values[quality],
         "ffmpeg_preset": "medium",
-        "scale": "1920:-1",
         "audio_codec": "aac",
         "audio_bitrate": "128k",
     }
+
+    if scale_option and quality == "optimized" and not resolution:
+        kwargs["scale"] = scale_option
+    elif resolution and scale_option:
+        kwargs["scale"] = scale_option
 
     if preset:
         cmd = ffmpeg.build_command(input_path, output_path, preset=preset)
     else:
         cmd = ffmpeg.build_command(input_path, output_path, **kwargs)
+
+    # Show confirmation
+    target_res = "Same as Source"
+    if "scale" in kwargs:
+        s = kwargs["scale"]
+        if ":-1" in s:
+            width = s.split(":")[0]
+            target_res = f"{width}px width (Auto height)"
+        elif "-1:" in s:
+            height = s.split(":")[1]
+            target_res = f"{height}px height (Auto width)"
+        else:
+            target_res = s
+
+    console.print(f"   Target Resolution: [cyan]{target_res}[/cyan]")
+    console.print(f"   Target FPS: [cyan]Same as Source[/cyan]")
+
+    if not Confirm.ask("\nProceed with compression?", default=True):
+        console.print("[yellow]Operation cancelled.[/yellow]")
+        return
 
     if ffmpeg.run_with_progress(cmd, info.duration if info else None):
         if info:

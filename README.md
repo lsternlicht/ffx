@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="ffx-image.png" alt="ffx logo" width="400" />
+</p>
+
 # ffx - FFmpeg, but improved
 
 A beautiful, intuitive wrapper for ffmpeg with smart defaults and helpful guidance.
