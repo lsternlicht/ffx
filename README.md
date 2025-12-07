@@ -4,11 +4,14 @@ A beautiful, intuitive wrapper for ffmpeg with smart defaults and helpful guidan
 
 ## Installation
 
+You can install `ffx` directly from the source. This will automatically install dependencies and the `ffx` command line tool.
+
 ```bash
-pip install rich click humanize
-# Save ffx.py as 'ffx'
-chmod +x ffx
-# Move to /usr/local/bin/ or add to PATH
+# Install from current directory
+pip install .
+
+# Or for development (editable mode)
+pip install -e .
 ```
 
 ## Requirements
@@ -16,7 +19,45 @@ chmod +x ffx
 - ffmpeg installed on system
 - Python 3.7+
 
-## Usage
+## Quickstart
+
+Run the interactive mode for guided optimization:
+
+```bash
+ffx interactive video.mp4
+```
+
+Compress a video to reduce size significantly:
+
+```bash
+ffx compress input.mp4
+```
+
+Trim a video clip (start at 30s, end at 1m 45s):
+
+```bash
+ffx trim input.mp4 00:30 01:45
+```
+
+Convert video to a GIF:
+
+```bash
+ffx gif input.mp4 --width 480 --fps 15
+```
+
+Extract audio from a video:
+
+```bash
+ffx audio input.mp4 --format mp3
+```
+
+Check file information:
+
+```bash
+ffx info input.mp4
+```
+
+For a full list of commands:
 
 ```bash
 ffx --help
